@@ -1,0 +1,11 @@
+{
+  "catalogs": {},
+  "aliases": {
+    "mcp-stdio-q-hello": {
+      "script-ref": "ai/McpServerStdioQuarkusHello.java"
+    },
+    "mcp-sse-q-hello": {
+      "script-ref": "ai/McpServerSseQuarkusHello.java"
+    }
+  }
+}
