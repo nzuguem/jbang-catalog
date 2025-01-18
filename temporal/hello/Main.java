@@ -5,6 +5,8 @@
 //DEPS io.quarkus:quarkus-rest-jackson
 //DEPS io.quarkus:quarkus-hibernate-validator
 //DEPS io.quarkiverse.temporal:quarkus-temporal:0.0.14
+//DEPS io.quarkus:quarkus-opentelemetry
+//DEPS io.quarkus:quarkus-micrometer-registry-prometheus
 
 import io.quarkiverse.temporal.TemporalActivity;
 import io.quarkiverse.temporal.TemporalWorkflow;
@@ -19,6 +21,8 @@ import io.temporal.client.WorkflowOptions;
 import io.temporal.common.RetryOptions;
 import io.temporal.common.SearchAttributeKey;
 import io.temporal.common.SearchAttributeUpdate;
+import io.temporal.failure.ActivityFailure;
+import io.temporal.failure.ApplicationFailure;
 import io.temporal.workflow.*;
 import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotBlank;
@@ -44,7 +48,9 @@ public class Main {
     @Path("/{name}")
     public Response sayHello(@RestPath @NotBlank String name, @RestQuery LangageCode langageCode) {
 
-        var workflowId = "hello-%s-%s".formatted(name.toLowerCase(Locale.ROOT), UUID.randomUUID().toString());
+        var workflowId = "hello-%s-%s".formatted(
+                name.toLowerCase(Locale.ROOT),
+                UUID.randomUUID().toString());
         var workflow = this.client.newWorkflowStub(HelloWorkflow.class,
                 WorkflowOptions.newBuilder()
                         .setWorkflowId(workflowId)
@@ -121,9 +127,18 @@ public class Main {
                 Workflow.await(() -> !Objects.isNull(this.langageCode));
             }
 
-            var hello = this.helloTranslationActivity.translateHello(this.langageCode);
+            String translateResult;
+            try {
+                translateResult = this.helloTranslationActivity.translateHello(this.langageCode);
+            }
+            // For Non Retryable Application Failure
+            catch (ActivityFailure activityFailure) {
+                LOGGER.error(activityFailure.getMessage(), activityFailure);
+                CorporateSearchAttributes.setStatus(HelloWorkflowStatus.ERROR);
+                throw activityFailure;
+            }
 
-            var helloResponse =  HelloResponse.of("%s %s !".formatted(hello, helloRequest.name()));
+            var helloResponse =  HelloResponse.of("%s %s !".formatted(translateResult, helloRequest.name()));
 
             CorporateSearchAttributes.setStatus(HelloWorkflowStatus.COMPLETED);
 
@@ -156,11 +171,21 @@ public class Main {
 
             Log.infof("Translate Hello To %s", languageCode);
 
+            injectErrorRandomly();
+
             return switch (languageCode) {
                 case fr -> "Bonjour";
                 case es -> "Hola";
                 case en -> "Hello";
+                case wtf -> throw ApplicationFailure.newNonRetryableFailure("invalid langage code: wtf","InvalidLangageCode");
             };
+        }
+
+        void injectErrorRandomly() {
+            if (new Random().nextBoolean()) {
+                var re = new RuntimeException("Translate Service temporarily unavailable");
+                throw ApplicationFailure.newFailureWithCause(re.getMessage(), "TranslateServiceUnavailable", re);
+            }
         }
     }
 
@@ -186,11 +211,11 @@ public class Main {
     }
 
     public enum LangageCode {
-        fr, es, en
+        fr, es, en, wtf
     }
 
     public enum HelloWorkflowStatus {
-        INITIAL, WAITING, UNKNOWN, COMPLETED
+        INITIAL, WAITING, UNKNOWN, COMPLETED, ERROR
     }
 
     public static class CorporateSearchAttributes {
