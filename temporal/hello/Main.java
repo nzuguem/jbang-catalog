@@ -14,8 +14,11 @@ import io.temporal.activity.ActivityInterface;
 import io.temporal.activity.ActivityMethod;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowExecutionMetadata;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.common.RetryOptions;
+import io.temporal.common.SearchAttributeKey;
+import io.temporal.common.SearchAttributeUpdate;
 import io.temporal.workflow.*;
 import jakarta.inject.Inject;
 import jakarta.validation.constraints.NotBlank;
@@ -28,10 +31,7 @@ import org.jboss.resteasy.reactive.RestQuery;
 import org.slf4j.Logger;
 
 import java.time.Duration;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 @Path("/hello")
 public class Main {
@@ -69,8 +69,13 @@ public class Main {
     @Path("/workflows/{workflowId}/status")
     public Response status(@RestPath @NotBlank String workflowId) {
 
-        var status = this.client.newWorkflowStub(HelloWorkflow.class, workflowId)
-                .getStatus();
+        var status = this.client.listExecutions("WorkflowId='%s'".formatted(workflowId))
+                .map(WorkflowExecutionMetadata::getTypedSearchAttributes)
+                .filter(sa -> sa.containsKey(CorporateSearchAttributes.HELLO_WORKFLOW_STATUS))
+                .map(sa -> sa.get(CorporateSearchAttributes.HELLO_WORKFLOW_STATUS))
+                .map(HelloWorkflowStatus::valueOf)
+                .findFirst()
+                .orElse(HelloWorkflowStatus.UNKNOWN);
 
         return Response.ok(Map.of("workflowId", workflowId, "status", status)).build();
     }
@@ -79,8 +84,6 @@ public class Main {
     public static class HelloWorkflowImpl implements HelloWorkflow {
 
         private LangageCode langageCode;
-
-        private String status = "INITIAL";
 
         ActivityOptions options = ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(Duration.ofSeconds(30))
@@ -102,35 +105,36 @@ public class Main {
 
         static final Logger LOGGER =  Workflow.getLogger("HelloWorkflow");
 
+        public HelloWorkflowImpl() {
+            CorporateSearchAttributes.setStatus(HelloWorkflowStatus.INITIAL);
+        }
+
         public HelloResponse sayHello(HelloRequest helloRequest) {
 
             LOGGER.info("Say Hello To {}", helloRequest.name());
 
             this.langageCode = helloRequest.languageCode();
 
-            Workflow.await(() -> {
-
-                this.status = "WAITING";
-
-                return !Objects.isNull(this.langageCode);
-            });
+            if (Objects.isNull(this.langageCode)) {
+                LOGGER.info("Waiting Signal langageCode ...");
+                CorporateSearchAttributes.setStatus(HelloWorkflowStatus.WAITING);
+                Workflow.await(() -> !Objects.isNull(this.langageCode));
+            }
 
             var hello = this.helloTranslationActivity.translateHello(this.langageCode);
 
             var helloResponse =  HelloResponse.of("%s %s !".formatted(hello, helloRequest.name()));
 
-            this.status = "COMPLETED";
+            CorporateSearchAttributes.setStatus(HelloWorkflowStatus.COMPLETED);
 
             return helloResponse;
         }
 
         public void langageCode(LangageCode langageCode) {
+            LOGGER.info("Receive Signal langageCode : {}", langageCode);
             this.langageCode = langageCode;
         }
 
-        public String getStatus() {
-            return this.status;
-        }
     }
 
 
@@ -143,8 +147,6 @@ public class Main {
         @SignalMethod
         void langageCode(LangageCode langageCode);
 
-        @QueryMethod
-        String getStatus();
     }
 
     @TemporalActivity(workers = "hello-translation-worker")
@@ -185,5 +187,21 @@ public class Main {
 
     public enum LangageCode {
         fr, es, en
+    }
+
+    public enum HelloWorkflowStatus {
+        INITIAL, WAITING, UNKNOWN, COMPLETED
+    }
+
+    public static class CorporateSearchAttributes {
+
+        public static final SearchAttributeKey<String> HELLO_WORKFLOW_STATUS = SearchAttributeKey.forKeyword("OrgCustomStatus");
+
+        private CorporateSearchAttributes() {}
+
+        public static void setStatus(HelloWorkflowStatus status) {
+            var update = SearchAttributeUpdate.valueSet(HELLO_WORKFLOW_STATUS, status.name());
+            Workflow.upsertTypedSearchAttributes(update);
+        }
     }
 }
