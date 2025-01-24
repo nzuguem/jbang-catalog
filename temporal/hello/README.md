@@ -16,7 +16,11 @@ temporal operator search-attribute create --namespace default --name OrgCustomSt
 
 - Start **Application Client** & **Workers**
 ```bash
+## Quarkus
 jbang --fresh temporal-say-hello-workflow@nzuguem
+
+## Spring Boot
+jbang --fresh temporal-say-hello-workflow-sb@nzuguem
 ```
 
 ### Temporal Cloud ☁️
@@ -24,12 +28,21 @@ jbang --fresh temporal-say-hello-workflow@nzuguem
 - Start **Application Client** & **Workers**
 
 ```bash
+## Quarkus
 jbang --fresh \
   -Dtarget=<target> \
   -Dnamespace=<ns> \
   -Dquarkus.profile=cloud \
   -Dapi_key=<api_key> \
   temporal-say-hello-workflow@nzuguem
+
+## Spring Boot
+jbang --fresh \
+  -Dtarget=<target> \
+  -Dnamespace=<ns> \
+  -Dspring.profiles.active=cloud \
+  -Dapi_key=<api_key> \
+  temporal-say-hello-workflow-sb@nzuguem
 ```
 
 ### Trigger Workflow

@@ -8,7 +8,10 @@
       "script-ref": "ai/McpServerSseQuarkusHello.java"
     },
     "temporal-say-hello-workflow": {
-      "script-ref": "temporal/hello/Main.java"
+      "script-ref": "temporal/hello/MainQuarkus.java"
+    },
+    "temporal-say-hello-workflow-sb": {
+      "script-ref": "temporal/hello/MainSpringBoot.java"
     }
   }
 }

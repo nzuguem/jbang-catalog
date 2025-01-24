@@ -1,6 +1,6 @@
 ///usr/bin/env jbang "$0" "$@" ; exit $?
 //JAVA 21+
-//FILES application.properties
+//FILES application.properties=application-quarkus.properties
 //DEPS io.quarkus:quarkus-bom:3.15.1@pom
 //DEPS io.quarkus:quarkus-rest-jackson
 //DEPS io.quarkus:quarkus-hibernate-validator
@@ -38,7 +38,7 @@ import java.time.Duration;
 import java.util.*;
 
 @Path("/hello")
-public class Main {
+public class MainQuarkus {
 
     @Inject
     WorkflowClient client;
